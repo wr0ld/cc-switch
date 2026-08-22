@@ -25,6 +25,11 @@ export interface PiPromptTemplate {
   revision: string;
 }
 
+export interface ApplyPromptResult {
+  applied: string[];
+  failed: string[];
+}
+
 export const promptsApi = {
   async getPrompts(app: AppId): Promise<Record<string, Prompt>> {
     return await invoke("get_prompts", { app });
@@ -40,6 +45,13 @@ export const promptsApi = {
 
   async enablePrompt(app: AppId, id: string): Promise<void> {
     return await invoke("enable_prompt", { app, id });
+  },
+
+  async applyPromptToAllApps(
+    app: AppId,
+    id: string,
+  ): Promise<ApplyPromptResult> {
+    return await invoke("apply_prompt_to_all_apps", { app, id });
   },
 
   async importFromFile(app: AppId): Promise<string> {

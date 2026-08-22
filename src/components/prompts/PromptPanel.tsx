@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { type AppId } from "@/lib/api";
 import { usePromptActions } from "@/hooks/usePromptActions";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
@@ -63,6 +64,7 @@ const StandardPromptPanel = React.forwardRef<
       savePrompt,
       deletePrompt,
       toggleEnabled,
+      applyToAllApps,
     } = usePromptActions(appId);
     const reloadRef = React.useRef(reload);
     reloadRef.current = reload;
@@ -224,6 +226,36 @@ const StandardPromptPanel = React.forwardRef<
       }
     };
 
+    const handleApplyToAll = (id: string) => {
+      if (reloadLockRef.current || writeLockRef.current || interactionBlocked) {
+        return;
+      }
+      const prompt = prompts[id];
+      overlayOpenRef.current = true;
+      setConfirmDialog({
+        isOpen: true,
+        titleKey: "prompts.confirm.applyToAllTitle",
+        messageKey: "prompts.confirm.applyToAllMessage",
+        messageParams: { name: prompt?.name },
+        onConfirm: async () => {
+          if (!beginWrite()) return;
+          try {
+            await applyToAllApps(id);
+            overlayOpenRef.current = false;
+            setConfirmDialog(null);
+            toast.success(t("prompts.applyToAllSuccess"), {
+              closeButton: true,
+            });
+            externalReloadQueuedRef.current = true;
+          } catch {
+            // Error handled by hook
+          } finally {
+            endWrite();
+          }
+        },
+      });
+    };
+
     const handleSave = async (
       id: string,
       prompt: Parameters<typeof savePrompt>[1],
@@ -272,6 +304,9 @@ const StandardPromptPanel = React.forwardRef<
           onToggle={handleToggle}
           onEdit={handleEdit}
           onDelete={handleDelete}
+          onApplyToAll={
+            enabledPrompt ? () => handleApplyToAll(enabledPrompt[0]) : undefined
+          }
         />
 
         {isFormOpen && (

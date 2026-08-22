@@ -1,6 +1,7 @@
 import { useMemo } from "react";
-import { FileText, Search } from "lucide-react";
+import { FileText, Search, Send } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
 import { ManagementListSearch } from "@/components/common/ManagementListSearch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Prompt } from "@/lib/api";
@@ -16,6 +17,7 @@ interface PromptLibraryProps {
   onToggle: (id: string, enabled: boolean) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  onApplyToAll?: () => void;
   isDeleteDisabled?: (id: string, prompt: Prompt) => boolean;
   getDeleteTitle?: (id: string, prompt: Prompt) => string;
 }
@@ -30,6 +32,7 @@ export function PromptLibrary({
   onToggle,
   onEdit,
   onDelete,
+  onApplyToAll,
   isDeleteDisabled,
   getDeleteTitle,
 }: PromptLibraryProps) {
@@ -54,10 +57,23 @@ export function PromptLibrary({
 
   return (
     <>
-      <div className="mb-4 flex-shrink-0 rounded-xl border border-white/10 px-6 py-4 glass">
+      <div className="mb-4 flex flex-shrink-0 items-center justify-between rounded-xl border border-white/10 px-6 py-4 glass">
         <div className="text-sm text-muted-foreground">
           {t("prompts.count", { count: promptEntries.length })} · {statusText}
         </div>
+        {onApplyToAll && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onApplyToAll}
+            disabled={disabled}
+            className="ml-4 flex-shrink-0"
+          >
+            <Send size={14} className="mr-1.5" />
+            {t("prompts.applyToAll")}
+          </Button>
+        )}
       </div>
 
       <ManagementListSearch

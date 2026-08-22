@@ -1452,6 +1452,7 @@ pub fn run() {
             commands::enable_prompt,
             commands::import_prompt_from_file,
             commands::get_current_prompt_file_content,
+            commands::apply_prompt_to_all_apps,
             commands::get_pi_prompt_file,
             commands::replace_pi_prompt_file,
             commands::delete_pi_prompt_file,

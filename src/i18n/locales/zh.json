@@ -2184,9 +2184,14 @@
     "disableFailed": "禁用失败",
     "importSuccess": "导入成功",
     "importFailed": "导入失败",
+    "applyToAll": "应用到全部应用",
+    "applyToAllFailed": "应用失败:部分应用未启用,请查看日志",
+    "applyToAllSuccess": "已应用到全部应用",
     "confirm": {
       "deleteTitle": "确认删除",
-      "deleteMessage": "确定要删除提示词 \"{{name}}\" 吗？"
+      "deleteMessage": "确定要删除提示词 \"{{name}}\" 吗？",
+      "applyToAllTitle": "应用到全部应用",
+      "applyToAllMessage": "将提示词 \"{{name}}\" 应用到 Claude、Codex、Gemini、Grok Build、OpenCode、OpenClaw、Hermes 全部应用吗？已启用项将被覆盖为该提示词内容。"
     }
   },
   "profiles": {

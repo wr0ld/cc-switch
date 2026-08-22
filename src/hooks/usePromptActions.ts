@@ -158,6 +158,21 @@ export function usePromptActions(appId: AppId) {
     [appId, reload, t, updatePromptsForApp],
   );
 
+  const applyToAllApps = useCallback(
+    async (id: string) => {
+      try {
+        await promptsApi.applyPromptToAllApps(appId, id);
+        const refreshed =
+          currentAppIdRef.current === appId ? await reload() : false;
+        return refreshed;
+      } catch (error) {
+        toast.error(t("prompts.applyToAllFailed"));
+        throw error;
+      }
+    },
+    [appId, reload, t],
+  );
+
   const toggleEnabled = useCallback(
     async (id: string, enabled: boolean) => {
       if (appId === "pi") {
@@ -276,6 +291,7 @@ export function usePromptActions(appId: AppId) {
     deletePrompt,
     enablePrompt,
     toggleEnabled,
+    applyToAllApps,
     importFromFile,
   };
 }

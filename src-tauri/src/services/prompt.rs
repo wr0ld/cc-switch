@@ -17,6 +17,12 @@ fn get_unix_timestamp() -> Result<i64, AppError> {
         .map_err(|e| AppError::Message(format!("Failed to get system time: {e}")))
 }
 
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct ApplyPromptResult {
+    pub applied: Vec<String>,
+    pub failed: Vec<String>,
+}
+
 pub struct PromptService;
 
 fn project_prompt_set_to_path(
@@ -278,6 +284,79 @@ impl PromptService {
         }
     }
 
+    /// 将源应用的指定提示词应用到所有支持 Prompt 的应用(幂等)。
+    ///
+    /// 目标应用已存在相同内容的提示词时直接启用,否则新建后启用;
+    /// 跳过源应用自身、Claude Desktop(不支持提示词投影)与 Pi(原生 AGENTS.md 激活机制)。
+    /// 返回每个目标应用的应用结果,供前端展示。
+    pub fn apply_prompt_to_all_apps(
+        state: &AppState,
+        source_app: AppType,
+        id: &str,
+    ) -> Result<ApplyPromptResult, AppError> {
+        let source_prompts = state.db.get_prompts(source_app.as_str())?;
+        let prompt = source_prompts
+            .get(id)
+            .cloned()
+            .ok_or_else(|| AppError::InvalidInput(format!("提示词 {id} 不存在")))?;
+
+        let mut result = ApplyPromptResult::default();
+        for app in AppType::all() {
+            if app == source_app || matches!(app, AppType::ClaudeDesktop | AppType::Pi) {
+                continue;
+            }
+            match Self::apply_prompt_to_app(state, app.clone(), &prompt) {
+                Ok(()) => result.applied.push(app.as_str().to_string()),
+                Err(error) => {
+                    log::warn!("应用 Prompt 到 {app:?} 失败: {error}");
+                    result.failed.push(format!("{}: {error}", app.as_str()));
+                }
+            }
+        }
+
+        if result.failed.is_empty() {
+            Ok(result)
+        } else {
+            Err(AppError::Message(format!(
+                "部分应用 Prompt 应用失败: {}",
+                result.failed.join("; ")
+            )))
+        }
+    }
+
+    /// 将提示词内容应用到单个应用:目标应用已存在相同内容则直接启用,否则新建后启用。
+    fn apply_prompt_to_app(state: &AppState, app: AppType, prompt: &Prompt) -> Result<(), AppError> {
+        let prompts = state.db.get_prompts(app.as_str())?;
+
+        // 幂等:目标应用已存在相同内容,直接启用它,避免重复创建
+        if let Some((existing_id, _)) = prompts.iter().find(|(_, p)| p.content == prompt.content) {
+            return Self::enable_prompt(state, app, existing_id);
+        }
+
+        let timestamp = get_unix_timestamp()?;
+        let mut new_id = format!("{}-all-apps-{timestamp}", prompt.id);
+        let mut suffix = 2_u64;
+        while prompts.contains_key(&new_id) {
+            new_id = format!("{}-all-apps-{timestamp}-{suffix}", prompt.id);
+            suffix += 1;
+        }
+
+        let new_prompt = Prompt {
+            id: new_id.clone(),
+            name: prompt.name.clone(),
+            content: prompt.content.clone(),
+            description: prompt
+                .description
+                .clone()
+                .or_else(|| Some("通过「应用到全部应用」同步".to_string())),
+            enabled: false,
+            created_at: Some(timestamp),
+            updated_at: Some(timestamp),
+        };
+        state.db.save_prompt(app.as_str(), &new_prompt)?;
+        Self::enable_prompt(state, app, &new_id)
+    }
+
     /// 首次启动时从现有提示词文件自动导入（如果存在）
     /// 返回导入的数量
     pub fn import_from_file_on_first_launch(
@@ -490,8 +569,14 @@ fn delete_pi_prompt(state: &AppState, id: &str) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::project_prompt_set_to_path;
+    use super::PromptService;
+    use crate::app_config::AppType;
+    use crate::database::Database;
     use crate::prompt::Prompt;
+    use crate::prompt_files::prompt_file_path;
+    use crate::store::AppState;
     use indexmap::IndexMap;
+    use std::sync::Arc;
     use tempfile::tempdir;
 
     fn prompt(id: &str, content: &str, enabled: bool) -> Prompt {
@@ -549,6 +634,91 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(path).expect("read prompt"),
             "first body"
+        );
+    }
+
+    fn enabled_prompt(id: &str, content: &str) -> Prompt {
+        Prompt {
+            id: id.to_string(),
+            name: format!("Prompt {id}"),
+            content: content.to_string(),
+            description: None,
+            enabled: true,
+            created_at: Some(1),
+            updated_at: Some(1),
+        }
+    }
+
+    #[test]
+    fn apply_prompt_to_all_apps_syncs_enabled_prompt_to_every_capable_app() {
+        let state = AppState::new(Arc::new(
+            Database::memory().expect("create in-memory database"),
+        ));
+        state
+            .db
+            .save_prompt(AppType::Claude.as_str(), &enabled_prompt("src", "全局提示词"))
+            .expect("save source prompt");
+
+        let result = PromptService::apply_prompt_to_all_apps(&state, AppType::Claude, "src")
+            .expect("apply to all apps");
+
+        assert!(!result.applied.is_empty());
+        assert!(result.failed.is_empty());
+        for app in AppType::all() {
+            if app == AppType::Claude || matches!(app, AppType::ClaudeDesktop | AppType::Pi) {
+                continue;
+            }
+            let prompts = state.db.get_prompts(app.as_str()).expect("load prompts");
+            let enabled = prompts
+                .values()
+                .find(|p| p.enabled)
+                .unwrap_or_else(|| panic!("{} 应有已启用提示词", app.as_str()));
+            assert_eq!(enabled.content, "全局提示词", "app {}", app.as_str());
+            let path = prompt_file_path(&app).expect("prompt path");
+            assert_eq!(
+                std::fs::read_to_string(&path).expect("read live"),
+                "全局提示词",
+                "app {} live 文件未写入",
+                app.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn apply_prompt_to_all_apps_is_idempotent() {
+        let state = AppState::new(Arc::new(
+            Database::memory().expect("create in-memory database"),
+        ));
+        state
+            .db
+            .save_prompt(AppType::Claude.as_str(), &enabled_prompt("src", "幂等内容"))
+            .expect("save source prompt");
+
+        PromptService::apply_prompt_to_all_apps(&state, AppType::Claude, "src")
+            .expect("first apply");
+        let first_count = state
+            .db
+            .get_prompts(AppType::Codex.as_str())
+            .expect("load prompts")
+            .len();
+
+        PromptService::apply_prompt_to_all_apps(&state, AppType::Claude, "src")
+            .expect("second apply");
+        let second_count = state
+            .db
+            .get_prompts(AppType::Codex.as_str())
+            .expect("load prompts")
+            .len();
+        assert_eq!(second_count, first_count, "重复应用不应产生重复提示词");
+    }
+
+    #[test]
+    fn apply_prompt_to_all_apps_missing_prompt_errors() {
+        let state = AppState::new(Arc::new(
+            Database::memory().expect("create in-memory database"),
+        ));
+        assert!(
+            PromptService::apply_prompt_to_all_apps(&state, AppType::Claude, "nope").is_err()
         );
     }
 }

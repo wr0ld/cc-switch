@@ -68,6 +68,16 @@ pub async fn get_current_prompt_file_content(app: String) -> Result<Option<Strin
 }
 
 #[tauri::command]
+pub async fn apply_prompt_to_all_apps(
+    app: String,
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<crate::services::prompt::ApplyPromptResult, String> {
+    let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
+    PromptService::apply_prompt_to_all_apps(&state, app_type, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn get_pi_prompt_file(kind: PiPromptFileKind) -> Result<PiPromptFileSnapshot, String> {
     PiPromptFileService::read(kind).map_err(|error| error.to_string())
 }
