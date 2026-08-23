@@ -576,6 +576,7 @@ mod tests {
     use crate::prompt_files::prompt_file_path;
     use crate::store::AppState;
     use indexmap::IndexMap;
+    use serial_test::serial;
     use std::sync::Arc;
     use tempfile::tempdir;
 
@@ -650,7 +651,12 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn apply_prompt_to_all_apps_syncs_enabled_prompt_to_every_capable_app() {
+        // 隔离:将所有应用的配置目录重定向到临时目录,避免写入真实用户配置
+        let home = tempdir().expect("tempdir");
+        std::env::set_var("CC_SWITCH_TEST_HOME", home.path());
+        std::env::set_var("HERMES_HOME", home.path().join("hermes"));
         let state = AppState::new(Arc::new(
             Database::memory().expect("create in-memory database"),
         ));
@@ -685,7 +691,12 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn apply_prompt_to_all_apps_is_idempotent() {
+        // 隔离:避免写入真实用户配置目录
+        let home = tempdir().expect("tempdir");
+        std::env::set_var("CC_SWITCH_TEST_HOME", home.path());
+        std::env::set_var("HERMES_HOME", home.path().join("hermes"));
         let state = AppState::new(Arc::new(
             Database::memory().expect("create in-memory database"),
         ));
